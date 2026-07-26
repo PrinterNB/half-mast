@@ -76,7 +76,17 @@ async function loadNotices() {
 
 function renderNationwide(notice) {
   const section = document.getElementById("nationwide-notice");
-  if (!section || !notice) return;
+  if (!section) return;
+
+  if (!notice) {
+    section.innerHTML = `
+      <h2>Nationwide Notice</h2>
+      <p class="status">None active</p>
+      <p><strong>Why:</strong> No current nationwide half-mast notice.</p>
+      <p><strong>How long:</strong> Check again later.</p>
+    `;
+    return;
+  }
 
   section.innerHTML = `
     <h2>Nationwide Notice</h2>

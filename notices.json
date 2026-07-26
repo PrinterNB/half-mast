@@ -1,9 +1,5 @@
 {
-  "nationwide": {
-    "status": "Active",
-    "why": "Honoring former President Jane Doe.",
-    "duration": "Sunrise to sunset, July 26, 2026 through July 30, 2026."
-  },
+  "nationwide": null,
   "states": [
     {
       "slug": "california",
