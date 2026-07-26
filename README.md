@@ -1,6 +1,13 @@
 # half-mast
 
-Simple static web UI for half-mast notices.
+A simple static web UI for half-mast notices.
+
+## What it shows
+
+- Nationwide half-mast notice at the top of the main page
+- Links to separate state-only notice pages
+- Reason and duration for each notice
+- Clean dark mode styling
 
 ## Open locally
 
