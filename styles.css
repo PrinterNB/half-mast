@@ -52,17 +52,55 @@ h2 {
   background: #ef476f;
 }
 
-.notice-list ul {
-  margin: 0;
-  padding-left: 1.1rem;
+.state-cards {
+  display: grid;
+  gap: 0.85rem;
 }
 
-.notice-list a {
+.state-card {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  background: #111a2b;
+  border: 1px solid #22324d;
+  border-radius: 12px;
+  padding: 0.9rem;
+}
+
+.state-card__icon {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #0e1728;
+  border: 1px solid #2a3b59;
+}
+
+.state-card__icon svg {
+  width: 46px;
+  height: 46px;
+  fill: #66b3ff;
+}
+
+.state-card__content h3 {
+  margin: 0 0 0.25rem;
+}
+
+.state-card__content p {
+  margin: 0 0 0.45rem;
+  color: #9fb1cc;
+  font-size: 0.95rem;
+}
+
+.state-card__link {
   color: #66b3ff;
   text-decoration: none;
+  font-weight: 600;
 }
 
-.notice-list a:hover {
+.state-card__link:hover {
   text-decoration: underline;
 }
 
