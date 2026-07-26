@@ -23,8 +23,9 @@ function renderNationwide(notice) {
 function renderStateCards(states) {
   const container = document.getElementById("state-cards");
   if (!container) return;
+  const safeStates = Array.isArray(states) ? states : [];
 
-  container.innerHTML = states
+  container.innerHTML = safeStates
     .map(
       (state) => `
         <article class="state-card">
@@ -42,6 +43,10 @@ function renderStateCards(states) {
       `
     )
     .join("");
+
+  if (!container.innerHTML) {
+    container.innerHTML = `<p class="state-error">No current state notices.</p>`;
+  }
 }
 
 function renderStatePage(states) {
@@ -49,7 +54,8 @@ function renderStatePage(states) {
   if (!section) return;
 
   const slug = document.body.dataset.state;
-  const state = states.find((item) => item.slug === slug);
+  const safeStates = Array.isArray(states) ? states : [];
+  const state = safeStates.find((item) => item.slug === slug);
 
   if (!state) {
     section.innerHTML = `

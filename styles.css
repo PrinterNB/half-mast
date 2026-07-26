@@ -104,6 +104,11 @@ h2 {
   text-decoration: underline;
 }
 
+.state-error {
+  margin: 0;
+  color: #9fb1cc;
+}
+
 .back-link {
   display: inline-block;
   margin-top: 1rem;
