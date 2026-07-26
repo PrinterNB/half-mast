@@ -81,7 +81,11 @@ h2 {
 .state-card__icon svg {
   width: 46px;
   height: 46px;
-  fill: #66b3ff;
+  fill: none;
+  stroke: #66b3ff;
+  stroke-width: 5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
 .state-card__content h3 {
