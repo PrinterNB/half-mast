@@ -1,4 +1,5 @@
 const DATA_PATH = document.body.dataset.page === "state" ? "../notices.json" : "notices.json";
+const NATIONWIDE_PATH = "/api/nationwide";
 
 const STATE_CATALOG = [
   { slug: "alabama", name: "Alabama", abbr: "AL" },
@@ -72,6 +73,20 @@ async function loadNotices() {
     throw new Error("Unable to load notice data.");
   }
   return response.json();
+}
+
+async function loadNationwideNotice(fallbackNotice) {
+  try {
+    const response = await fetch(`${NATIONWIDE_PATH}?t=${Date.now()}`);
+    if (!response.ok) {
+      return fallbackNotice || null;
+    }
+
+    const data = await response.json();
+    return data?.notice || fallbackNotice || null;
+  } catch {
+    return fallbackNotice || null;
+  }
 }
 
 function renderNationwide(notice) {
@@ -182,7 +197,8 @@ function renderError() {
 async function renderFromData() {
   try {
     const data = await loadNotices();
-    renderNationwide(data.nationwide);
+    const nationwide = await loadNationwideNotice(data.nationwide);
+    renderNationwide(nationwide);
     renderStateCards(data.states);
     renderStatePage(data.states);
   } catch {
