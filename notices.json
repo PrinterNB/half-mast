@@ -1,0 +1,42 @@
+{
+  "nationwide": {
+    "status": "Active",
+    "why": "Honoring former President Jane Doe.",
+    "duration": "Sunrise to sunset, July 26, 2026 through July 30, 2026."
+  },
+  "states": [
+    {
+      "slug": "california",
+      "name": "California",
+      "status": "Active",
+      "why": "Honoring Officer Alex Rivera (line-of-duty death).",
+      "duration": "Sunrise to sunset, July 26, 2026 to July 28, 2026.",
+      "icon": {
+        "viewBox": "0 0 120 180",
+        "path": "M50 6 L61 20 L57 36 L67 62 L62 88 L68 110 L56 135 L60 158 L47 172 L34 164 L30 146 L36 121 L27 96 L33 70 L28 49 L36 27 Z"
+      }
+    },
+    {
+      "slug": "new-york",
+      "name": "New York",
+      "status": "Active",
+      "why": "Honoring firefighter Casey Morgan (line-of-duty death).",
+      "duration": "Sunrise to sunset, July 27, 2026 to July 29, 2026.",
+      "icon": {
+        "viewBox": "0 0 200 100",
+        "path": "M14 36 L42 25 L68 30 L88 23 L108 31 L130 29 L151 38 L176 38 L176 52 L148 50 L130 58 L112 56 L98 70 L80 64 L66 74 L48 70 L34 57 L18 58 Z"
+      }
+    },
+    {
+      "slug": "texas",
+      "name": "Texas",
+      "status": "Active",
+      "why": "Honoring Judge Taylor Brooks for public service.",
+      "duration": "Sunrise to sunset, July 26, 2026 to July 27, 2026.",
+      "icon": {
+        "viewBox": "0 0 180 170",
+        "path": "M20 64 L44 40 L74 46 L94 24 L126 30 L148 60 L166 61 L152 82 L156 109 L126 119 L112 141 L82 141 L65 124 L41 129 L33 106 L10 93 Z"
+      }
+    }
+  ]
+}
