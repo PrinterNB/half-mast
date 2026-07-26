@@ -12,8 +12,8 @@
       "why": "Honoring Officer Alex Rivera (line-of-duty death).",
       "duration": "Sunrise to sunset, July 26, 2026 to July 28, 2026.",
       "icon": {
-        "viewBox": "0 0 120 180",
-        "path": "M50 6 L61 20 L57 36 L67 62 L62 88 L68 110 L56 135 L60 158 L47 172 L34 164 L30 146 L36 121 L27 96 L33 70 L28 49 L36 27 Z"
+        "viewBox": "0 0 140 220",
+        "path": "M58 8 L73 22 L68 40 L79 64 L73 87 L81 110 L70 137 L74 164 L66 194 L52 210 L38 199 L34 177 L42 150 L31 124 L36 96 L29 73 L36 51 L32 30 L43 14 Z"
       }
     },
     {
@@ -23,8 +23,8 @@
       "why": "Honoring firefighter Casey Morgan (line-of-duty death).",
       "duration": "Sunrise to sunset, July 27, 2026 to July 29, 2026.",
       "icon": {
-        "viewBox": "0 0 200 100",
-        "path": "M14 36 L42 25 L68 30 L88 23 L108 31 L130 29 L151 38 L176 38 L176 52 L148 50 L130 58 L112 56 L98 70 L80 64 L66 74 L48 70 L34 57 L18 58 Z"
+        "viewBox": "0 0 240 130",
+        "path": "M14 64 L38 50 L58 55 L76 46 L101 54 L124 51 L146 57 L166 55 L184 62 L203 62 L214 67 L230 69 L232 82 L212 82 L196 89 L178 89 L163 97 L148 94 L132 104 L114 102 L96 111 L80 108 L65 116 L50 110 L36 99 L22 98 L18 86 L8 79 Z"
       }
     },
     {
@@ -34,8 +34,8 @@
       "why": "Honoring Judge Taylor Brooks for public service.",
       "duration": "Sunrise to sunset, July 26, 2026 to July 27, 2026.",
       "icon": {
-        "viewBox": "0 0 180 170",
-        "path": "M20 64 L44 40 L74 46 L94 24 L126 30 L148 60 L166 61 L152 82 L156 109 L126 119 L112 141 L82 141 L65 124 L41 129 L33 106 L10 93 Z"
+        "viewBox": "0 0 220 200",
+        "path": "M30 30 L108 30 L108 66 L137 92 L171 104 L196 130 L176 140 L170 168 L143 164 L122 190 L86 190 L70 168 L45 159 L38 138 L14 123 L35 106 L49 92 L33 78 Z"
       }
     }
   ]
