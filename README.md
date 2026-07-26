@@ -11,6 +11,7 @@ A simple static web UI for half-mast notices.
 - Nationwide notice is fetched automatically from the White House proclamations pages when deployed on Wrangler/Workers
 - State notices are loaded from `notices.json`
 - State routes work for any U.S. state through the shared state page
+- Legacy URLs like `states/washington.html` are routed to the shared state page automatically
 
 ## Update future notices
 

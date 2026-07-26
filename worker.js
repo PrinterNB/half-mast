@@ -108,6 +108,14 @@ export default {
       }
     }
 
+    const stateFileMatch = url.pathname.match(/^\/states\/([a-z0-9-]+)\.html$/i);
+    if (stateFileMatch) {
+      const stateSlug = stateFileMatch[1].toLowerCase();
+      url.pathname = "/states/state.html";
+      url.searchParams.set("state", stateSlug);
+      return env.ASSETS.fetch(new Request(url, request));
+    }
+
     return env.ASSETS.fetch(request);
   },
 };
