@@ -1,5 +1,5 @@
 const DATA_PATH = document.body.dataset.page === "state" ? "../notices.json" : "notices.json";
-const NATIONWIDE_PATH = "/api/nationwide";
+const NOTICE_BUNDLE_PATH = "/api/notices";
 
 const STATE_CATALOG = [
   { slug: "alabama", name: "Alabama", abbr: "AL" },
@@ -68,25 +68,26 @@ function getStateSlug() {
 }
 
 async function loadNotices() {
+  try {
+    const response = await fetch(NOTICE_BUNDLE_PATH);
+    if (response.ok) {
+      const data = await response.json();
+      if (data && (Array.isArray(data.states) || data.nationwide !== undefined)) {
+        return {
+          nationwide: data.nationwide || null,
+          states: Array.isArray(data.states) ? data.states : [],
+        };
+      }
+    }
+  } catch {
+    // Fall through to the static bundle.
+  }
+
   const response = await fetch(`${DATA_PATH}?t=${Date.now()}`);
   if (!response.ok) {
     throw new Error("Unable to load notice data.");
   }
   return response.json();
-}
-
-async function loadNationwideNotice(fallbackNotice) {
-  try {
-    const response = await fetch(`${NATIONWIDE_PATH}?t=${Date.now()}`);
-    if (!response.ok) {
-      return fallbackNotice || null;
-    }
-
-    const data = await response.json();
-    return data?.notice || fallbackNotice || null;
-  } catch {
-    return fallbackNotice || null;
-  }
 }
 
 function renderNationwide(notice) {
@@ -197,8 +198,7 @@ function renderError() {
 async function renderFromData() {
   try {
     const data = await loadNotices();
-    const nationwide = await loadNationwideNotice(data.nationwide);
-    renderNationwide(nationwide);
+    renderNationwide(data.nationwide);
     renderStateCards(data.states);
     renderStatePage(data.states);
   } catch {
