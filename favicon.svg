@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="United States flag at half mast">
+  <defs>
+    <clipPath id="flagClip">
+      <rect x="18" y="16" width="34" height="24" rx="1.5" ry="1.5" />
+    </clipPath>
+  </defs>
+  <rect width="64" height="64" fill="#f4f1ea"/>
+  <rect x="28" y="8" width="4" height="48" rx="2" fill="#6b6b6b"/>
+  <rect x="24" y="22" width="12" height="4" rx="2" fill="#3b3b3b"/>
+  <g clip-path="url(#flagClip)">
+    <rect x="18" y="16" width="34" height="24" fill="#ffffff"/>
+    <g fill="#b22234">
+      <rect x="18" y="16" width="34" height="3"/>
+      <rect x="18" y="22" width="34" height="3"/>
+      <rect x="18" y="28" width="34" height="3"/>
+      <rect x="18" y="34" width="34" height="3"/>
+      <rect x="18" y="40" width="34" height="3"/>
+    </g>
+    <rect x="18" y="16" width="15" height="13" fill="#3c3b6e"/>
+    <g fill="#ffffff" opacity="0.95">
+      <circle cx="21" cy="19" r="0.8"/>
+      <circle cx="25" cy="19" r="0.8"/>
+      <circle cx="29" cy="19" r="0.8"/>
+      <circle cx="23" cy="22" r="0.8"/>
+      <circle cx="27" cy="22" r="0.8"/>
+      <circle cx="31" cy="22" r="0.8"/>
+      <circle cx="21" cy="25" r="0.8"/>
+      <circle cx="25" cy="25" r="0.8"/>
+      <circle cx="29" cy="25" r="0.8"/>
+    </g>
+  </g>
+  <path d="M52 17c-5 1-9 4-13 8l0.3 7.5c4.4-3.5 8.2-5.3 11.7-5.8v-9.7z" fill="#d4a373" opacity="0.35"/>
+</svg>
