@@ -8,6 +8,9 @@ const PROCLAMATION_LIST_PAGES = [
 const HALF_STAFF_KEYWORDS = ["half-staff", "half staff", "halfmast", "half mast"];
 const NGA_CURRENT_GOVERNORS_URL = "https://www.nga.org/governors/";
 const NOTICE_CACHE_TTL_MS = 5 * 60 * 1000;
+const STATE_RESULT_TTL_MS = 10 * 60 * 1000;
+const STATES_PER_PASS = 8;
+const MAX_NATIONWIDE_ARTICLES = 12;
 const STATE_NAMES = new Set([
   "Alabama",
   "Alaska",
@@ -65,7 +68,7 @@ let memoryNoticeCacheAt = 0;
 let memoryNoticePromise = null;
 
 function parseHumanDate(text) {
-  const match = text.match(/until\s+6:00\s*p\.m\.\s+on\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/i);
+  const match = text.match(/until\s+6:00\s*p\.m\.\s+(?:on\s+)?(?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/i);
   if (!match) return null;
 
   const date = new Date(`${match[1]} ${match[2]}, ${match[3]} 18:00:00 UTC`);
@@ -107,12 +110,12 @@ function extractPublishedDate(html) {
 }
 
 function parseDurationDate(text, referenceDate = new Date()) {
-  const explicit = text.match(/until\s+(?:sunset|noon|6:00\s*p\.m\.)\s*(?:on\s+)?([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/i);
+  const explicit = text.match(/until\s+(?:sunset|noon|6:00\s*p\.m\.)\s*(?:on\s+)?(?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/i);
   if (explicit) {
     return new Date(`${explicit[1]} ${explicit[2]}, ${explicit[3]} 18:00:00 UTC`);
   }
 
-  const monthDay = text.match(/(?:until|through|tomorrow,?)\s+(?:sunset|noon|6:00\s*p\.m\.)?\s*(?:on\s+)?([A-Za-z]+)\s+(\d{1,2})(?:,\s+(\d{4}))?/i);
+  const monthDay = text.match(/(?:until|through|tomorrow,?)\s+(?:sunset|noon|6:00\s*p\.m\.)?\s*(?:on\s+)?(?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2})(?:,\s+(\d{4}))?/i);
   if (monthDay) {
     const year = monthDay[3] || referenceDate.getUTCFullYear();
     return new Date(`${monthDay[1]} ${monthDay[2]}, ${year} 18:00:00 UTC`);
@@ -215,7 +218,7 @@ function extractHalfStaffNotice(html, sourceName, fallbackWhy) {
   }
 
   const durationMatch =
-    body.match(/until\s+(?:sunset|6:00\s*p\.m\.)\s*(?:on\s+)?[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
+    body.match(/until\s+(?:sunset|6:00\s*p\.m\.)\s*(?:on\s+)?(?:[A-Za-z]+,\s+)?[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
     body.match(/from\s+sunrise\s+to\s+sunset(?:\s+on)?\s+[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
     body.match(/until\s+interment/i) ||
     body.match(/through\s+[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
@@ -317,7 +320,7 @@ async function findNoticeOnSite(url, sourceName, visited = new Set(), depth = 0)
     return { ...notice, source: url };
   }
 
-  const candidateLinks = extractCandidateLinks(html, url).slice(0, depth === 0 ? 8 : 4);
+  const candidateLinks = extractCandidateLinks(html, url).slice(0, 4);
   for (const link of candidateLinks) {
     if (visited.has(link.href)) {
       continue;
@@ -424,11 +427,18 @@ async function findStateNoticeForName(stateName, profileMap) {
 }
 
 async function findNationwideNotice() {
+  let articleChecks = 0;
+
   for (const listUrl of PROCLAMATION_LIST_PAGES) {
     const listHtml = await fetchPage(listUrl);
     const articleLinks = extractLinks(listHtml, listUrl, (href) => href.includes("/presidential-actions/"));
 
     for (const article of articleLinks) {
+      if (articleChecks >= MAX_NATIONWIDE_ARTICLES) {
+        return null;
+      }
+      articleChecks += 1;
+
       const articleHtml = await fetchPage(article.href);
       const { title, body, publishedAt } = extractArticleContent(articleHtml);
       const combined = `${title} ${body}`.toLowerCase();
@@ -465,23 +475,76 @@ async function findNationwideNotice() {
   return null;
 }
 
+function stateCacheUrl(stateName) {
+  return `https://half-mast.internal/state/${getStateSlugFromName(stateName)}`;
+}
+
+async function getCachedStateEntry(cache, stateName) {
+  if (!cache) {
+    return undefined;
+  }
+
+  const entry = await cache.match(stateCacheUrl(stateName));
+  if (!entry) {
+    return undefined;
+  }
+
+  const payload = await entry.json().catch(() => null);
+  if (!payload || Date.now() - (payload.at || 0) > STATE_RESULT_TTL_MS) {
+    return undefined;
+  }
+
+  return payload;
+}
+
+async function cacheStateEntry(cache, stateName, notice) {
+  if (!cache) {
+    return;
+  }
+
+  const response = Response.json({ notice: notice || null, at: Date.now() });
+  response.headers.set("Cache-Control", `public, max-age=${STATE_RESULT_TTL_MS / 1000}`);
+  await cache.put(stateCacheUrl(stateName), response).catch(() => {});
+}
+
 async function findStateNotices() {
+  const cache = getCacheStore();
   const indexHtml = await fetchPage(NGA_CURRENT_GOVERNORS_URL);
   const profileMap = extractNgaGovernorProfiles(indexHtml);
   const stateNames = Array.from(STATE_NAMES);
-  const notices = await runWithConcurrency(stateNames, 5, async (stateName) => {
-    try {
-      const notice = await findStateNoticeForName(stateName, profileMap);
-      if (!notice || !isNoticeCurrent(notice.duration, notice.publishedAt)) {
-        return null;
-      }
-      return notice;
-    } catch {
-      return null;
+
+  const latest = new Map();
+  const pending = [];
+  for (const stateName of stateNames) {
+    const entry = await getCachedStateEntry(cache, stateName);
+    if (entry !== undefined) {
+      latest.set(stateName, entry.notice || null);
+    } else {
+      pending.push(stateName);
     }
+  }
+
+  // Crawl only a bounded number of uncached states per invocation so the worker
+  // stays under its subrequest limit. The rest fill in over subsequent polls.
+  const batch = pending.slice(0, STATES_PER_PASS);
+  await runWithConcurrency(batch, 5, async (stateName) => {
+    let notice = null;
+    try {
+      const found = await findStateNoticeForName(stateName, profileMap);
+      if (found && isNoticeCurrent(found.duration, found.publishedAt)) {
+        notice = found;
+      }
+    } catch {
+      // Treat this state as having no notice for this pass.
+    }
+
+    latest.set(stateName, notice);
+    await cacheStateEntry(cache, stateName, notice);
   });
 
-  return notices.sort((a, b) => a.name.localeCompare(b.name));
+  return Array.from(latest.values())
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export default {

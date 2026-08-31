@@ -80,6 +80,17 @@ async function loadNotices() {
       }
     }
   } catch {
+    // Fall through to the cheaper endpoints.
+  }
+
+  let apiNationwide = null;
+  try {
+    const response = await fetch("/api/nationwide");
+    if (response.ok) {
+      const data = await response.json();
+      apiNationwide = data && data.notice ? data.notice : null;
+    }
+  } catch {
     // Fall through to the static bundle.
   }
 
@@ -87,7 +98,11 @@ async function loadNotices() {
   if (!response.ok) {
     throw new Error("Unable to load notice data.");
   }
-  return response.json();
+  const fallback = await response.json();
+  if (apiNationwide) {
+    return { nationwide: apiNationwide, states: Array.isArray(fallback.states) ? fallback.states : [] };
+  }
+  return fallback;
 }
 
 function renderNationwide(notice) {
