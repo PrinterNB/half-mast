@@ -1,3 +1,7 @@
+// Official RSS feed: one subrequest returns recent Presidential Actions with full
+// text and publication dates — far cheaper and more accurate than scraping list
+// pages and article HTML. The page-scrape crawl below stays as a fallback.
+const PRESIDENTIAL_ACTIONS_FEED = "https://www.whitehouse.gov/presidential-actions/feed/";
 const PROCLAMATION_LIST_PAGES = [
   "https://www.whitehouse.gov/presidential-actions/proclamations/",
   "https://www.whitehouse.gov/presidential-actions/proclamations/page/2/",
@@ -14,6 +18,12 @@ const NOTICE_CACHE_TTL_MS = 5 * 60 * 1000;
 const STATE_RESULT_TTL_MS = 60 * 60 * 1000;
 const STATES_PER_PASS = 8;
 const MAX_NATIONWIDE_ARTICLES = 12;
+// Stay inside the Free plan's 50-subrequests-per-request limit; paid plans allow
+// 10,000, so this guard only ever matters on Free.
+const SUBREQUEST_BUDGET = 48;
+const MAX_SUBREQ_PER_STATE = 12; // profile page + capped on-site crawl worst case
+const STATE_GROUP_SIZE = 3;
+let subrequestsUsed = 0;
 const STATE_NAMES = new Set([
   "Alabama",
   "Alaska",
@@ -190,6 +200,10 @@ function isNoticeCurrent(durationText, publishedAt) {
 }
 
 async function fetchPage(url) {
+  if (subrequestsUsed >= SUBREQUEST_BUDGET) {
+    throw new Error(`Subrequest budget exhausted (skipped ${url})`);
+  }
+  subrequestsUsed += 1;
   const response = await fetch(url, {
     headers: {
       "user-agent": "half-mast-notice-bot/1.0",
@@ -376,7 +390,7 @@ async function findNoticeOnSite(url, sourceName, visited = new Set(), depth = 0)
     return { ...notice, source: url };
   }
 
-  const candidateLinks = extractCandidateLinks(html, url).slice(0, 4);
+  const candidateLinks = extractCandidateLinks(html, url).slice(0, 3);
   for (const link of candidateLinks) {
     if (visited.has(link.href)) {
       continue;
@@ -389,7 +403,7 @@ async function findNoticeOnSite(url, sourceName, visited = new Set(), depth = 0)
     }
 
     if (looksLikeNoticePage(linkedHtml)) {
-      const deeperLinks = extractCandidateLinks(linkedHtml, link.href).slice(0, 4);
+      const deeperLinks = extractCandidateLinks(linkedHtml, link.href).slice(0, 2);
       for (const deeperLink of deeperLinks) {
         if (visited.has(deeperLink.href)) {
           continue;
@@ -482,7 +496,77 @@ async function findStateNoticeForName(stateName, profileMap) {
   };
 }
 
+function parseFeedItems(xml) {
+  const items = [];
+  const itemRe = /<item>([\s\S]*?)<\/item>/g;
+  let block;
+  while ((block = itemRe.exec(xml)) !== null) {
+    const title = block.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/);
+    const link = block.match(/<link>(?:<!\[CDATA\[)?([^<\]]+?)(?:\]\>)?<\/link>/);
+    const pubDate = block.match(/<pubDate>([^<]+)<\/pubDate>/);
+    const content =
+      block.match(/<content:encoded><!\[CDATA\[([\s\S]*?)\]\]><\/content:encoded>/) ||
+      block.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/);
+    const publishedAt = pubDate ? new Date(pubDate[1]) : null;
+    items.push({
+      title: cleanText(title ? title[1] : ""),
+      link: link ? link[1].trim() : "",
+      publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
+      body: content ? stripHtml(decodeEntities(content[1])) : "",
+    });
+  }
+  return items;
+}
+
+async function findNationwideNoticeFromFeed() {
+  const xml = await fetchPage(PRESIDENTIAL_ACTIONS_FEED);
+  const items = parseFeedItems(xml);
+  if (!items.length) {
+    throw new Error("Feed parse produced no items");
+  }
+
+  for (const item of items.slice(0, MAX_NATIONWIDE_ARTICLES)) {
+    const combined = `${item.title} ${item.body}`.toLowerCase();
+    if (!HALF_STAFF_KEYWORDS.some((keyword) => combined.includes(keyword))) {
+      continue;
+    }
+    if (!/(ordered|directed|lowered|flown at half-staff|half-staff|half staff|halfmast|half mast|proclaim|proclamation)/i.test(combined)) {
+      continue;
+    }
+
+    const expires = parseDurationDate(item.body);
+    if (expires && expires < new Date()) {
+      continue;
+    }
+
+    const durationMatch = matchDurationText(item.body);
+    const durationText = durationMatch ? cleanText(durationMatch[0]) : "";
+    if (!isNoticeCurrent(durationText, item.publishedAt)) {
+      continue;
+    }
+
+    const why = item.title.replace(/^death of\s+/i, "Honoring ");
+    return {
+      status: "Active",
+      why: why || "Nationwide half-mast notice",
+      duration: durationText || "Until further notice.",
+      source: item.link || PRESIDENTIAL_ACTIONS_FEED,
+    };
+  }
+
+  return null;
+}
+
+// Feed first (one subrequest); page scraping only as a fallback if the feed fails.
 async function findNationwideNotice() {
+  try {
+    return await findNationwideNoticeFromFeed();
+  } catch {
+    return await findNationwideNoticeFromPages();
+  }
+}
+
+async function findNationwideNoticeFromPages() {
   let articleChecks = 0;
 
   for (const listUrl of PROCLAMATION_LIST_PAGES) {
@@ -598,25 +682,33 @@ async function findStateNotices() {
     return buildResult();
   }
 
-  // Crawl only a bounded number of uncached states per invocation. A cold pass
-  // costs ~200 subrequests worst case, comfortably inside the paid plan's 10,000
-  // subrequests-per-request limit (the free plan's limit is 50). The rest fill in
-  // over subsequent polls.
-  const batch = pending.slice(0, STATES_PER_PASS);
-  await runWithConcurrency(batch, 5, async (stateName) => {
-    let notice = null;
-    try {
-      const found = await findStateNoticeForName(stateName, profileMap);
-      if (found && isNoticeCurrent(found.duration, found.publishedAt)) {
-        notice = found;
-      }
-    } catch {
-      // Treat this state as having no notice for this pass.
+  // Crawl in small groups and stop when the shared subrequest budget runs low, so
+  // even the Free plan's 50-subrequest-per-request limit is never hit (fetchPage
+  // also refuses to go past SUBREQUEST_BUDGET). States skipped this pass stay
+  // uncached and get picked up on subsequent polls.
+  let crawled = 0;
+  for (let i = 0; i < pending.length && crawled < STATES_PER_PASS; i += STATE_GROUP_SIZE) {
+    const group = pending.slice(i, i + STATE_GROUP_SIZE);
+    if (subrequestsUsed + group.length * MAX_SUBREQ_PER_STATE > SUBREQUEST_BUDGET) {
+      break;
     }
 
-    latest.set(stateName, notice);
-    await cacheStateEntry(cache, stateName, notice);
-  });
+    await runWithConcurrency(group, group.length, async (stateName) => {
+      let notice = null;
+      try {
+        const found = await findStateNoticeForName(stateName, profileMap);
+        if (found && isNoticeCurrent(found.duration, found.publishedAt)) {
+          notice = found;
+        }
+      } catch {
+        // Treat this state as having no notice for this pass.
+      }
+
+      latest.set(stateName, notice);
+      await cacheStateEntry(cache, stateName, notice);
+    });
+    crawled += group.length;
+  }
 
   return buildResult();
 }
@@ -626,6 +718,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/notices") {
+      subrequestsUsed = 0;
       const respond = (payload) => {
         const response = Response.json(payload);
         response.headers.set("Cache-Control", "public, max-age=300");
