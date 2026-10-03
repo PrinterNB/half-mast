@@ -237,14 +237,19 @@ function extractLinks(listHtml, baseUrl, predicate = () => true, allowExternalHo
 }
 
 function extractArticleContent(html) {
-  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+  const titleMatch =
+    html.match(/<h1[^>]*>([^<]+)<\/h1>/i) ||
+    html.match(/property="og:title"[^>]+content="([^"]+)"/i) ||
+    html.match(/<title[^>]*>([^<]+)<\/title>/i);
   const contentMatch =
     html.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ||
     html.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ||
     html.match(/<div[^>]+class="[^"]*(?:entry-content|content|article-body|story-body|main-content|page-content)[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
     html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const body = contentMatch ? stripHtml(contentMatch[1]) : "";
-  const title = titleMatch ? cleanText(titleMatch[1]) : "";
+  const title = titleMatch
+    ? cleanText(titleMatch[1]).replace(/\s*[–—-]\s*(?:the\s+)?white\s+house\s*$/i, "")
+    : "";
   const publishedAt = extractPublishedDate(html);
   return { title, body, publishedAt };
 }
@@ -507,8 +512,12 @@ async function findNationwideNotice() {
 
       const why = title.replace(/^death of\s+/i, "Honoring ");
       const durationMatch = matchDurationText(body);
-      const durationText = durationMatch ? cleanText(durationMatch[0]) : "Until further notice.";
+      const durationText = durationMatch ? cleanText(durationMatch[0]) : "";
 
+      // An empty duration text means the proclamation states no end at all — the
+      // age heuristic must decide, never a fabricated "until further notice", or
+      // dated one-day observances (Patriot Day proclamations…) look current for
+      // 60 days after publication.
       if (!isNoticeCurrent(durationText, publishedAt)) {
         continue;
       }
@@ -516,7 +525,7 @@ async function findNationwideNotice() {
       return {
         status: "Active",
         why,
-        duration: durationText,
+        duration: durationText || "Until further notice.",
         source: article.href,
       };
     }
