@@ -8,7 +8,10 @@ const PROCLAMATION_LIST_PAGES = [
 const HALF_STAFF_KEYWORDS = ["half-staff", "half staff", "halfmast", "half mast"];
 const NGA_CURRENT_GOVERNORS_URL = "https://www.nga.org/governors/";
 const NOTICE_CACHE_TTL_MS = 5 * 60 * 1000;
-const STATE_RESULT_TTL_MS = 10 * 60 * 1000;
+// A full crawl of all states takes ~7 passes (50 states ÷ 8 per pass ≈ 35 min at the
+// client's 5-min polling interval), so per-state entries must stay valid longer than
+// one sweep; otherwise freshly uncached states make cards flicker off between polls.
+const STATE_RESULT_TTL_MS = 60 * 60 * 1000;
 const STATES_PER_PASS = 8;
 const MAX_NATIONWIDE_ARTICLES = 12;
 const STATE_NAMES = new Set([
@@ -67,16 +70,41 @@ let memoryNoticeCache = null;
 let memoryNoticeCacheAt = 0;
 let memoryNoticePromise = null;
 
-function parseHumanDate(text) {
-  const match = text.match(/until\s+6:00\s*p\.m\.\s+(?:on\s+)?(?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/i);
-  if (!match) return null;
+const HTML_ENTITIES = {
+  nbsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  hellip: "…",
+  ndash: "–",
+  mdash: "—",
+  lsquo: "'",
+  rsquo: "'",
+  ldquo: '"',
+  rdquo: '"',
+  middot: "·",
+  bull: "•",
+  copy: "©",
+};
 
-  const date = new Date(`${match[1]} ${match[2]}, ${match[3]} 18:00:00 UTC`);
-  return Number.isNaN(date.getTime()) ? null : date;
+function decodeEntities(text) {
+  return text.replace(/&#x([0-9a-f]{1,6});|&#(\d{1,6});|&([a-zA-Z][a-zA-Z0-9]{0,10});/gi, (match, hex, decimal, name) => {
+    if (hex !== undefined) {
+      const code = parseInt(hex, 16);
+      return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    }
+    if (decimal !== undefined) {
+      const code = parseInt(decimal, 10);
+      return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    }
+    return HTML_ENTITIES[name.toLowerCase()] ?? match;
+  });
 }
 
 function cleanText(value) {
-  return value.replace(/\s+/g, " ").trim();
+  return decodeEntities(value).replace(/\s+/g, " ").trim();
 }
 
 function stripHtml(html) {
@@ -109,16 +137,32 @@ function extractPublishedDate(html) {
   return null;
 }
 
+// Proclamation texts announce "until sunset" / "until 6:00 p.m." in local ET or PT.
+// End-of-day UTC is the tightest practical bound: it errs at most ~2 h late for
+// Eastern time and ~4 h early for late Pacific sunsets — far tighter than the old
+// hard-coded 18:00 UTC, which was mid-afternoon Eastern and marked notices expired
+// hours early.
 function parseDurationDate(text, referenceDate = new Date()) {
   const explicit = text.match(/until\s+(?:sunset|noon|6:00\s*p\.m\.)\s*(?:on\s+)?(?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/i);
   if (explicit) {
-    return new Date(`${explicit[1]} ${explicit[2]}, ${explicit[3]} 18:00:00 UTC`);
+    const date = new Date(`${explicit[1]} ${explicit[2]}, ${explicit[3]} 23:59:59 UTC`);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   const monthDay = text.match(/(?:until|through|tomorrow,?)\s+(?:sunset|noon|6:00\s*p\.m\.)?\s*(?:on\s+)?(?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2})(?:,\s+(\d{4}))?/i);
   if (monthDay) {
     const year = monthDay[3] || referenceDate.getUTCFullYear();
-    return new Date(`${monthDay[1]} ${monthDay[2]}, ${year} 18:00:00 UTC`);
+    let date = new Date(`${monthDay[1]} ${monthDay[2]}, ${year} 23:59:59 UTC`);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    if (date.getTime() < referenceDate.getTime()) {
+      const rolled = new Date(`${monthDay[1]} ${monthDay[2]}, ${year + 1} 23:59:59 UTC`);
+      if (!Number.isNaN(rolled.getTime())) {
+        date = rolled;
+      }
+    }
+    return date;
   }
 
   return null;
@@ -131,7 +175,7 @@ function isNoticeCurrent(durationText, publishedAt) {
     return explicitDate >= now;
   }
 
-  if (/until\s+further\s+notice/i.test(durationText)) {
+  if (/until\s+further\s+notice|until\s+interment|from\s+sunrise\s+to\s+sunset/i.test(durationText)) {
     if (!publishedAt) return false;
     const ageMs = now - publishedAt;
     return ageMs <= 60 * 24 * 60 * 60 * 1000;
@@ -205,6 +249,19 @@ function extractArticleContent(html) {
   return { title, body, publishedAt };
 }
 
+// Shared duration grammar so the nationwide scan and the state scan agree on what
+// counts as a duration phrase ("until sunset", "until interment", "through June 5"…).
+function matchDurationText(body) {
+  return (
+    body.match(/until\s+(?:sunset|noon|6:00\s*p\.m\.)\s*(?:on\s+)?(?:[A-Za-z]+,\s+)?[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
+    body.match(/from\s+sunrise\s+to\s+sunset(?:\s+on)?\s+[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
+    body.match(/until\s+interment/i) ||
+    body.match(/through\s+[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
+    body.match(/tomorrow,?\s+[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
+    body.match(/until\s+further\s+notice/i)
+  );
+}
+
 function extractHalfStaffNotice(html, sourceName, fallbackWhy) {
   const { title, body, publishedAt } = extractArticleContent(html);
   const combined = `${title} ${body}`.toLowerCase();
@@ -217,13 +274,7 @@ function extractHalfStaffNotice(html, sourceName, fallbackWhy) {
     return null;
   }
 
-  const durationMatch =
-    body.match(/until\s+(?:sunset|6:00\s*p\.m\.)\s*(?:on\s+)?(?:[A-Za-z]+,\s+)?[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
-    body.match(/from\s+sunrise\s+to\s+sunset(?:\s+on)?\s+[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
-    body.match(/until\s+interment/i) ||
-    body.match(/through\s+[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
-    body.match(/tomorrow(?:,\s*)?[A-Za-z]+\s+\d{1,2}(?:,\s+\d{4})?/i) ||
-    body.match(/until\s+further\s+notice/i);
+  const durationMatch = matchDurationText(body);
 
   if (!durationMatch) {
     return null;
@@ -447,16 +498,15 @@ async function findNationwideNotice() {
         continue;
       }
 
-      const expires = parseHumanDate(body);
-      const now = new Date();
-      const isActive = !expires || expires >= now;
+      const expires = parseDurationDate(body);
+      const isActive = !expires || expires >= new Date();
 
       if (!isActive) {
         continue;
       }
 
       const why = title.replace(/^death of\s+/i, "Honoring ");
-      const durationMatch = body.match(/until\s+6:00\s*p\.m\.\s+on\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}/i);
+      const durationMatch = matchDurationText(body);
       const durationText = durationMatch ? cleanText(durationMatch[0]) : "Until further notice.";
 
       if (!isNoticeCurrent(durationText, publishedAt)) {
@@ -509,13 +559,10 @@ async function cacheStateEntry(cache, stateName, notice) {
 
 async function findStateNotices() {
   const cache = getCacheStore();
-  const indexHtml = await fetchPage(NGA_CURRENT_GOVERNORS_URL);
-  const profileMap = extractNgaGovernorProfiles(indexHtml);
-  const stateNames = Array.from(STATE_NAMES);
 
   const latest = new Map();
   const pending = [];
-  for (const stateName of stateNames) {
+  for (const stateName of Array.from(STATE_NAMES)) {
     const entry = await getCachedStateEntry(cache, stateName);
     if (entry !== undefined) {
       latest.set(stateName, entry.notice || null);
@@ -524,8 +571,28 @@ async function findStateNotices() {
     }
   }
 
-  // Crawl only a bounded number of uncached states per invocation so the worker
-  // stays under its subrequest limit. The rest fill in over subsequent polls.
+  const buildResult = () => Array.from(latest.values())
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // No NGA index fetch unless there is actually a batch to crawl: a warm-cache pass
+  // must not pay for (or fail on) an unrelated subrequest.
+  if (!pending.length) {
+    return buildResult();
+  }
+
+  let profileMap = new Map();
+  try {
+    profileMap = extractNgaGovernorProfiles(await fetchPage(NGA_CURRENT_GOVERNORS_URL));
+  } catch {
+    // Keep serving whatever the state cache already has; retry the crawl next poll.
+    return buildResult();
+  }
+
+  // Crawl only a bounded number of uncached states per invocation. A cold pass
+  // costs ~200 subrequests worst case, comfortably inside the paid plan's 10,000
+  // subrequests-per-request limit (the free plan's limit is 50). The rest fill in
+  // over subsequent polls.
   const batch = pending.slice(0, STATES_PER_PASS);
   await runWithConcurrency(batch, 5, async (stateName) => {
     let notice = null;
@@ -542,9 +609,7 @@ async function findStateNotices() {
     await cacheStateEntry(cache, stateName, notice);
   });
 
-  return Array.from(latest.values())
-    .filter(Boolean)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return buildResult();
 }
 
 export default {
@@ -552,14 +617,20 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/notices") {
+      const respond = (payload) => {
+        const response = Response.json(payload);
+        response.headers.set("Cache-Control", "public, max-age=300");
+        return response;
+      };
+
       const cachedPayload = getCachedNoticePayload();
       if (cachedPayload) {
-        return Response.json(cachedPayload);
+        return respond(cachedPayload);
       }
 
       if (memoryNoticePromise) {
         const payload = await memoryNoticePromise;
-        return Response.json(payload);
+        return respond(payload);
       }
 
       const cacheKey = new Request(url.toString(), request);
@@ -621,11 +692,13 @@ export default {
     }
 
     const stateFileMatch = url.pathname.match(/^\/states\/([a-z0-9-]+)\.html$/i);
-    if (stateFileMatch) {
-      const stateSlug = stateFileMatch[1].toLowerCase();
-      url.pathname = "/states/state.html";
-      url.searchParams.set("state", stateSlug);
-      return env.ASSETS.fetch(new Request(url, request));
+    if (stateFileMatch && stateFileMatch[1].toLowerCase() !== "state") {
+      // Legacy pretty URL (states/washington.html): redirect to the shared page with
+      // the slug in the query so the client-side state picker can see it. Rewriting
+      // the asset request instead would not change the URL in the browser.
+      const target = new URL("/states/state.html", request.url);
+      target.searchParams.set("state", stateFileMatch[1].toLowerCase());
+      return Response.redirect(target.toString(), 302);
     }
 
     return env.ASSETS.fetch(request);

@@ -45,13 +45,17 @@ h2 {
   border-top: 4px solid #ef476f;
 }
 
+.notice-list {
+  margin-top: 1.5rem;
+}
+
 .status {
   display: inline-block;
   margin: 0 0 0.75rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.82rem;
-  color: #fff;
+  color: #170c16;
   background: #ef476f;
 }
 
@@ -75,7 +79,8 @@ h2 {
   height: 64px;
   flex: 0 0 64px;
   display: grid;
-  place-items: center;
+  align-items: center;
+  justify-items: center;
   border-radius: 18px;
   background: linear-gradient(180deg, #13213a, #0e1728);
   border: 1px solid #2a3b59;
@@ -84,7 +89,8 @@ h2 {
 
 .state-card__icon-badge {
   display: grid;
-  place-items: center;
+  align-items: center;
+  justify-items: center;
   width: 44px;
   height: 44px;
   border-radius: 14px;

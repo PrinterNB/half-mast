@@ -64,7 +64,25 @@ function getStatePageUrl(slug) {
 
 function getStateSlug() {
   const queryState = new URLSearchParams(window.location.search).get("state");
-  return queryState || document.body.dataset.state || "";
+  if (queryState) return queryState;
+  const backLink = document.querySelector(".back-link");
+  const stateMatch = backLink ? String(backLink.getAttribute("href") || "").match(/[?&]state=([^&#]+)/) : null;
+  return stateMatch ? decodeURIComponent(stateMatch[1]) : document.body.dataset.state || "";
+}
+
+function getStateAbbr(state) {
+  const meta = getStateMeta(state.slug);
+  if (meta) return meta.abbr;
+  return state.slug.split("-").slice(0, 2).map((part) => part.slice(0, 1).toUpperCase()).join("");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function loadNotices() {
@@ -121,9 +139,9 @@ function renderNationwide(notice) {
 
   section.innerHTML = `
     <h2>Nationwide Notice</h2>
-    <p class="status">${notice.status}</p>
-    <p><strong>Why:</strong> ${notice.why}</p>
-    <p><strong>How long:</strong> ${notice.duration}</p>
+    <p class="status">${escapeHtml(notice.status)}</p>
+    <p><strong>Why:</strong> ${escapeHtml(notice.why)}</p>
+    <p><strong>How long:</strong> ${escapeHtml(notice.duration)}</p>
   `;
 }
 
@@ -132,26 +150,31 @@ function renderStateCards(states) {
   if (!container) return;
   const safeStates = Array.isArray(states) ? states : [];
 
+  if (!safeStates.length) {
+    container.innerHTML = `<p class="state-error">No current state notices.</p>`;
+    return;
+  }
+
   container.innerHTML = safeStates
     .map(
-      (state) => `
+      (state) => {
+        const name = escapeHtml(getStateMeta(state.slug)?.name || state.name || state.slug);
+        const href = escapeHtml(getStatePageUrl(state.slug));
+        return `
         <article class="state-card">
           <div class="state-card__icon" aria-hidden="true">
-            <span class="state-card__icon-badge">${getStateMeta(state.slug)?.abbr || state.slug.slice(0, 2).toUpperCase()}</span>
+            <span class="state-card__icon-badge">${escapeHtml(getStateAbbr(state))}</span>
           </div>
           <div class="state-card__content">
-            <h3>${getStateMeta(state.slug)?.name || state.name}</h3>
-            <p>${state.why}</p>
-            <a class="state-card__link" href="${getStatePageUrl(state.slug)}">View notice</a>
+            <h3>${name}</h3>
+            <p>${escapeHtml(state.why)}</p>
+            <a class="state-card__link" href="${href}" aria-label="${name} half-mast notice">View notice</a>
           </div>
         </article>
-      `
+      `;
+      }
     )
     .join("");
-
-  if (!container.innerHTML) {
-    container.innerHTML = `<p class="state-error">No current state notices.</p>`;
-  }
 }
 
 function renderStatePage(states) {
@@ -171,16 +194,16 @@ function renderStatePage(states) {
   if (!notice) {
     section.innerHTML = `
       <p class="status">Unavailable</p>
-      <p><strong>Why:</strong> No current notice found for ${stateName}.</p>
+      <p><strong>Why:</strong> No current notice found for ${escapeHtml(stateName)}.</p>
       <p><strong>How long:</strong> Check back soon.</p>
     `;
     return;
   }
 
   section.innerHTML = `
-    <p class="status">${notice.status}</p>
-    <p><strong>Why:</strong> ${notice.why}</p>
-    <p><strong>How long:</strong> ${notice.duration}</p>
+    <p class="status">${escapeHtml(notice.status)}</p>
+    <p><strong>Why:</strong> ${escapeHtml(notice.why)}</p>
+    <p><strong>How long:</strong> ${escapeHtml(notice.duration)}</p>
   `;
 }
 

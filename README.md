@@ -27,9 +27,13 @@ That file is now only a fallback data source, so you should not need to edit it 
 
 Because the UI loads JSON with `fetch`, run a local static server:
 
-```bash
-cd .
-python3 -m http.server 8000
+```powershell
+python -m http.server 8000
 ```
 
 Then open `http://localhost:8000/index.html`.
+
+Note that locally there is no worker, so `/api/notices` 404s and the UI falls back to
+`notices.json` as-is; with the empty default it shows "None active" / "No current state
+notices". Edit `notices.json` if you want to preview sample data, and keep in mind that
+the legacy `states/<slug>.html` redirects only exist once the worker runs (deployed).
